@@ -1,4 +1,4 @@
-# Bajaj — Full-Stack Blood Alert App
+#  Full-Stack Blood Alert App
 
 A monorepo containing a React + Vite client and a Node.js + Express + MongoDB server with Socket.IO.
 
