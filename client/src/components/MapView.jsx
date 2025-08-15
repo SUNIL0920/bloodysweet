@@ -1,4 +1,5 @@
-import { MapContainer, TileLayer, Marker, Popup, CircleMarker, useMap } from 'react-leaflet'
+import { useEffect, useRef, useState } from 'react'
+import { MapContainer, TileLayer, Marker, Popup, CircleMarker, Polyline, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet.heat'
 
@@ -15,13 +16,50 @@ function HeatLayer({ points = [] }) {
   return null
 }
 
-export default function MapView({ center, requests = [], pledges = [], heatpoints = [] }) {
+function SearchControl({ onLocate }) {
+  const map = useMap()
+  const inputRef = useRef(null)
+
+  useEffect(() => {
+    const handler = async (e) => {
+      e.preventDefault()
+      const q = inputRef.current?.value?.trim()
+      if (!q) return
+      try {
+        const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}`
+        const res = await fetch(url, { headers: { 'Accept': 'application/json' } })
+        const json = await res.json()
+        const top = json?.[0]
+        if (top?.lat && top?.lon) {
+          const lat = Number(top.lat), lng = Number(top.lon)
+          map.setView([lat, lng], 12)
+          onLocate && onLocate([lng, lat])
+        }
+      } catch {}
+    }
+    const form = document.getElementById('map-search-form')
+    form?.addEventListener('submit', handler)
+    return () => form?.removeEventListener('submit', handler)
+  }, [map, onLocate])
+
+  return (
+    <div className="absolute z-[1000] left-2 top-2">
+      <form id="map-search-form" className="flex gap-2">
+        <input ref={inputRef} placeholder="Search location…" className="input-field-light w-64" />
+        <button className="btn-secondary" type="submit">Go</button>
+      </form>
+    </div>
+  )
+}
+
+export default function MapView({ center, requests = [], pledges = [], donors = [], heatpoints = [], routes = [], hospitals = [], onSearchLocate, heightClass = 'h-80' }) {
   const [lng, lat] = center || [0,0]
   const heat = (heatpoints || []).map(p => [p.coordinates[1], p.coordinates[0], Math.min(1, (p.count || 1)/5)])
 
   return (
-    <div className="h-80 w-full overflow-hidden rounded-2xl">
+    <div className={`${heightClass} w-full overflow-hidden rounded-2xl relative`}>
       <MapContainer center={[lat, lng]} zoom={12} scrollWheelZoom className="h-full w-full">
+        <SearchControl onLocate={onSearchLocate} />
         <TileLayer
           attribution='&copy; OpenStreetMap contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -55,9 +93,46 @@ export default function MapView({ center, requests = [], pledges = [], heatpoint
                   <div className="font-semibold">{p.donor?.name}</div>
                   <div>ETA: {p.etaMinutes || '—'} min</div>
                   <div>Code: <strong>{p.code}</strong></div>
+                  {typeof p.availableForMinutes === 'number' && <div>Available: ~{p.availableForMinutes} min</div>}
                 </div>
               </Popup>
             </CircleMarker>
+          )
+        })}
+
+        {donors.map((d, idx) => {
+          const [dlng, dlat] = d?.location?.coordinates || []
+          if (dlat == null) return null
+          return (
+            <CircleMarker key={`donor-${d.donorId || idx}`} center={[dlat, dlng]} radius={6} pathOptions={{ color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.85 }}>
+              <Popup>
+                <div className="text-sm">
+                  <div className="font-semibold">{d.name || 'Donor'}</div>
+                  {d.bloodType && <div>Blood: <strong>{d.bloodType}</strong></div>}
+                  {typeof d.distanceKm === 'number' && <div>~{d.distanceKm.toFixed(1)} km away</div>}
+                </div>
+              </Popup>
+            </CircleMarker>
+          )
+        })}
+
+        {routes.map((r, idx) => (
+          <Polyline key={idx} positions={r.coordinates} pathOptions={{ color: '#22c55e', weight: 4, opacity: 0.7 }} />
+        ))}
+
+        {hospitals.map((h) => {
+          const [hlng, hlat] = h.location?.coordinates || []
+          if (hlat == null) return null
+          return (
+            <Marker key={h._id} position={[hlat, hlng]} icon={hospitalIcon}>
+              <Popup>
+                <div className="text-sm">
+                  <div className="font-semibold">{h.name}</div>
+                  {typeof h.activeCount === 'number' && <div>Active Requests: <strong>{h.activeCount}</strong></div>}
+                  {typeof h.distanceMeters === 'number' && <div>~{(h.distanceMeters/1000).toFixed(1)} km away</div>}
+                </div>
+              </Popup>
+            </Marker>
           )
         })}
       </MapContainer>

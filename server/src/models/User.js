@@ -28,6 +28,7 @@ const UserSchema = new Schema({
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true, index: true },
   password: { type: String, required: true, select: false },
+  age: { type: Number, min: 16, max: 100 },
   bloodType: {
     type: String,
     required: true,
@@ -40,7 +41,20 @@ const UserSchema = new Schema({
     enum: ['donor', 'hospital'],
     default: 'donor'
   },
-  lastDonationDate: { type: Date }
+  // optional contact fields for WhatsApp notifications
+  phone: { type: String }, // store in E.164, e.g., +9198XXXXXXXX
+  waApiKey: { type: String }, // CallMeBot per-recipient key (optional)
+  lastDonationDate: { type: Date },
+  responsivenessScore: { type: Number, min: 0, max: 1, default: 0.5 },
+  availabilityWindows: [{ day: { type: Number, min: 0, max: 6 }, start: String, end: String }],
+  availableNow: { type: Boolean, default: true },
+  creditPoints: { type: Number, default: 0, min: 0 },
+  capacityUnits: { type: Number, min: 0, max: 50, default: 0 }, // for hospitals: stock units per blood
+  lastHealthCheckAt: { type: Date },
+  whatsappOptIn: { type: Boolean, default: false },
+  // Password reset fields
+  resetPasswordToken: { type: String },
+  resetPasswordExpires: { type: Date }
 }, { timestamps: true });
 
 UserSchema.index({ location: '2dsphere' });
