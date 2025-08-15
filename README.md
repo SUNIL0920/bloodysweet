@@ -133,24 +133,8 @@ The client expects the API at the same origin during development, or you can con
 
 ---
 
-## 6) Push to GitHub (manual fallback)
-If the GitHub CLI is not available or not authenticated, you can push manually:
-```bash
-# From the repository root
-git init
-git add .
-git commit -m "Initial commit"
 
-# Create a repo named "bajaj" in your GitHub account first,
-# then replace <YOUR_USERNAME> below
-git branch -M main
-git remote add origin https://github.com/<YOUR_USERNAME>/bajaj.git
-git push -u origin main
-```
-
----
-
-## 7) Notes
+## 6) Notes
 - Tailwind CSS is already configured in the client.
 - Socket.IO server is enabled and ready for realtime features.
 - Update environment variables before running the server. 
