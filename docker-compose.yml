@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  # MongoDB Database
+  mongodb:
+    image: mongo:7.0
+    container_name: blood-alert-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password123
+      MONGO_INITDB_DATABASE: blood_alert_mvp
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+      - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    networks:
+      - blood-alert-network
+
+  # Backend Server
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: blood-alert-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      MONGO_URI: mongodb://admin:password123@mongodb:27017/blood_alert_mvp?authSource=admin
+      CORS_ORIGIN: http://localhost:3000
+      PORT: 5000
+      JWT_SECRET: your-super-secure-jwt-secret-change-in-production
+      FROM_EMAIL: Blood Alert <no-reply@bloodalert.local>
+    ports:
+      - "5000:5000"
+    depends_on:
+      - mongodb
+    networks:
+      - blood-alert-network
+    volumes:
+      - ./server/uploads:/app/uploads
+
+  # Frontend Client
+  frontend:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: blood-alert-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - blood-alert-network
+    environment:
+      - REACT_APP_API_URL=http://localhost:5000
+
+  # Redis for caching (optional)
+  redis:
+    image: redis:7-alpine
+    container_name: blood-alert-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - blood-alert-network
+    volumes:
+      - redis_data:/data
+
+volumes:
+  mongodb_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  blood-alert-network:
+    driver: bridge

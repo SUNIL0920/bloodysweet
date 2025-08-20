@@ -1,0 +1,56 @@
+services:
+  # Backend API Service
+  - type: web
+    name: blood-alert-backend
+    env: node
+    plan: free
+    buildCommand: cd server && npm install
+    startCommand: cd server && npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: MONGO_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
+      - key: FROM_EMAIL
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_SECURE
+        value: "true"
+      - key: TEXTBELT_KEY
+        sync: false
+      - key: WHATSAPP_ENABLED
+        value: "false"
+      - key: CALLMEBOT_API_KEY
+        sync: false
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_WHATSAPP_FROM
+        sync: false
+
+  # Frontend Static Site
+  - type: web
+    name: blood-alert-frontend
+    env: static
+    plan: free
+    buildCommand: cd client && npm install && npm run build
+    staticPublishPath: ./client/dist
+    envVars:
+      - key: REACT_APP_API_URL
+        value: https://blood-alert-backend.onrender.com
+      - key: REACT_APP_ENVIRONMENT
+        value: production
