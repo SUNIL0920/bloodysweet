@@ -4,13 +4,17 @@ import { io } from 'socket.io-client'
 
 const AuthContext = createContext(null)
 
+// Force environment variable usage
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000'
+
 const api = axios.create({
-  baseURL: process.env.REACT_APP_API_URL || 'http://localhost:5000',
+  baseURL: API_URL,
 });
 
 // Debug: Log the actual API URL being used
 console.log('REACT_APP_API_URL:', process.env.REACT_APP_API_URL)
-console.log('Final API baseURL:', process.env.REACT_APP_API_URL || 'http://localhost:5000')
+console.log('Final API baseURL:', API_URL)
+console.log('Environment check:', process.env.NODE_ENV)
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
@@ -34,7 +38,7 @@ export function AuthProvider({ children }) {
       })()
 
       // init socket
-      const s = io(process.env.REACT_APP_API_URL || 'http://localhost:5000', { transports: ['websocket'] })
+      const s = io(API_URL, { transports: ['websocket'] })
       setSocket(s)
       // join private room after connect
       s.on('connect', () => {
