@@ -49,8 +49,10 @@ const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:5174', 
   'http://localhost:3000',
-  'http://localhost:5175'
-];
+  'http://localhost:5175',
+  // Production domains
+  process.env.CORS_ORIGIN
+].filter(Boolean);
 
 app.use(cors({ 
   origin: function (origin, callback) {
@@ -92,6 +94,16 @@ app.use("/api/hospitals", hospitalRoutes);
 
 app.get("/", (_req, res) => {
   res.json({ status: "ok", message: "Blood Alert API" });
+});
+
+// Health check endpoint for Render
+app.get("/health", (_req, res) => {
+  res.json({ 
+    status: "healthy", 
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    environment: process.env.NODE_ENV || "development"
+  });
 });
 
 const PORT = process.env.PORT || 5000;

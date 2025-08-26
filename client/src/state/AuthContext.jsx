@@ -5,8 +5,8 @@ import { io } from 'socket.io-client'
 const AuthContext = createContext(null)
 
 const api = axios.create({
-  baseURL: 'http://localhost:5000', // Force use of correct port
-})
+  baseURL: process.env.REACT_APP_API_URL || 'http://localhost:5000',
+});
 
 // Debug: Log the actual API URL being used
 console.log('VITE_API_URL:', import.meta.env.VITE_API_URL)
@@ -34,7 +34,7 @@ export function AuthProvider({ children }) {
       })()
 
       // init socket
-      const s = io('http://localhost:5000', { transports: ['websocket'] })
+      const s = io(process.env.REACT_APP_API_URL || 'http://localhost:5000', { transports: ['websocket'] })
       setSocket(s)
       // join private room after connect
       s.on('connect', () => {
