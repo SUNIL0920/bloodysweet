@@ -26,9 +26,26 @@ export default function DonorDashboard() {
   const [availableNow, setAvailableNow] = useState(user?.availableNow ?? true)
   const [routes, setRoutes] = useState([])
 
+  // Derived donor state
+  const cooldownActive = typeof readiness?.daysSince === 'number' && readiness.daysSince < 30
+  const hasActivePledge = useMemo(() => (pledges || []).some(p => p.status === 'pledged'), [JSON.stringify(pledges)])
+
   const fetchNearby = async () => {
-    const { data } = await api.get('/api/requests/nearby')
-    setRequests(data)
+    try {
+      const { data } = await api.get('/api/requests/nearby')
+      setRequests(data)
+      
+      // Special notification for O+ donors finding O+ requests
+      if (user?.bloodType === 'O+') {
+        const oPlusRequests = data.filter(r => r.bloodType === 'O+')
+        if (oPlusRequests.length > 0) {
+          toast.success(`Found ${oPlusRequests.length} O+ blood request(s) - perfect match for you!`)
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching nearby requests:', error)
+      setRequests([])
+    }
   }
   const fetchHotspots = async () => {
     try { const { data } = await api.get('/api/requests/hotspots'); setHotspots(data) } catch { setHotspots([]) }
@@ -81,6 +98,8 @@ export default function DonorDashboard() {
       setActiveCode(data.code)
       localStorage.setItem(`activeArrivalCode:${user?._id}`, data.code)
       setPledgeFor(null)
+      // Ensure UI immediately hides further pledges
+      try { await fetchPledges() } catch {}
 
       // Build driving route from donor location to hospital and display on map
       try {
@@ -149,9 +168,32 @@ export default function DonorDashboard() {
 
   const filteredRequests = useMemo(() => {
     return (requests || [])
-      .filter(r => (r.distanceKm ?? (r.distanceMeters ? r.distanceMeters/1000 : 999)) <= maxDistanceKm)
-      .filter(r => onlyCompatible ? r.compatibilityScore : true)
-  }, [requests, onlyCompatible, maxDistanceKm])
+      .filter(r => {
+        // Handle both distanceKm and distanceMeters, with fallback for missing data
+        const distance = r.distanceKm ?? (r.distanceMeters ? r.distanceMeters/1000 : 0)
+        return distance <= maxDistanceKm
+      })
+      .filter(r => {
+        // If onlyCompatible is true, check compatibilityScore
+        if (!onlyCompatible) return true
+        
+        // Enhanced compatibility check for O+ donors
+        if (user?.bloodType === 'O+') {
+          // O+ donors should ALWAYS see O+ requests
+          if (r.bloodType === 'O+') {
+            return true
+          }
+        }
+        
+        // If compatibilityScore is missing, use fallback logic
+        if (r.compatibilityScore === undefined || r.compatibilityScore === null) {
+          // Fallback: Check if donor and request have same blood type
+          return user?.bloodType === r.bloodType
+        }
+        
+        return r.compatibilityScore > 0
+      })
+  }, [requests, onlyCompatible, maxDistanceKm, user?.bloodType])
 
   if (loading) return <Spinner />
 
@@ -196,11 +238,40 @@ export default function DonorDashboard() {
           <div className="lg:col-span-2 card-glass p-8">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-lg font-semibold text-white flex items-center gap-2"><Filter className="h-4 w-4" /> Nearby Emergency Requests</h3>
-              <div className="text-xs text-gray-300">Auto-refreshing every 20s</div>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={async () => {
+                    try {
+                      const res = await api.post('/api/requests/test/create-request');
+                      toast.success('Test request created!');
+                      await fetchNearby(); // Refresh the list
+                    } catch (e) {
+                      toast.error('Failed to create test request');
+                    }
+                  }}
+                  className="btn-secondary text-xs px-3 py-1"
+                >
+                  Create Test Request
+                </button>
+                <div className="text-xs text-gray-300">Auto-refreshing every 20s</div>
+              </div>
             </div>
+            {cooldownActive && (
+              <div className="mb-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg text-amber-200 text-sm">
+                You have recently donated. <strong>You are eligible to donate again after 30 days</strong>.
+                {typeof readiness?.daysSince === 'number' && readiness.daysSince >= 0 && (
+                  <> Come back in <strong>{30 - readiness.daysSince}</strong> day(s).</>
+                )}
+              </div>
+            )}
             <details className="mb-4 open:mb-4">
               <summary className="cursor-pointer text-sm text-gray-200">Filters</summary>
               <div className="mt-3 grid md:grid-cols-3 gap-3">
+                <div className="md:col-span-3 mb-2">
+                  <div className="text-xs text-gray-400">
+                    Current filters: {maxDistanceKm}km radius • {onlyCompatible ? 'Compatible only' : 'All requests'} • {requests.length} total requests found
+                  </div>
+                </div>
                 <div>
                   <label className="label">Max Distance (km)</label>
                   <input type="range" min="5" max="50" step="5" value={maxDistanceKm} onChange={(e)=>setMaxDistanceKm(Number(e.target.value))} className="w-full" />
@@ -218,17 +289,42 @@ export default function DonorDashboard() {
                 </div>
               </div>
             </details>
+            {/* Special O+ Section for O+ Donors */}
+            {user?.bloodType === 'O+' && filteredRequests.some(r => r.bloodType === 'O+') && (
+              <div className="mb-4 p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg">
+                <div className="text-sm text-emerald-200 font-medium mb-2">
+                  🎯 O+ Blood Requests - Perfect Match for You!
+                </div>
+                <div className="text-xs text-emerald-300">
+                  These requests are specifically for your blood type and will be prioritized.
+                </div>
+              </div>
+            )}
+            
             <div className="space-y-3">
               {filteredRequests.map(r => (
                 <div key={r._id} className="space-y-2">
                   <RequestCard request={r} />
                   <div className="flex items-center gap-2">
-                    <button className="btn-primary" onClick={() => openPledge(r)}>Pledge to Donate</button>
+                    {hasActivePledge ? (
+                      <div className="text-xs text-gray-300">You already have an active pledge. Complete it before pledging again.</div>
+                    ) : cooldownActive ? (
+                      <div className="text-xs text-amber-200">Eligible to donate again after 30 days.</div>
+                    ) : (
+                      <button className="btn-primary" onClick={() => openPledge(r)}>Pledge to Donate</button>
+                    )}
                   </div>
                 </div>
               ))}
               {filteredRequests.length === 0 && (
-                <div className="text-sm text-gray-300 flex items-center gap-2"><BadgeCheck className="h-4 w-4" /> No nearby requests within selected distance.</div>
+                <div className="text-sm text-gray-300 flex items-center gap-2">
+                  <BadgeCheck className="h-4 w-4" /> 
+                  {requests.length === 0 ? (
+                    "No blood requests found. Check your location settings and try refreshing."
+                  ) : (
+                    "No compatible requests within selected distance. Try adjusting filters or increasing distance."
+                  )}
+                </div>
               )}
             </div>
           </div>

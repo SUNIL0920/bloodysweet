@@ -32,7 +32,7 @@ services:
       - key: TEXTBELT_KEY
         sync: false
       - key: WHATSAPP_ENABLED
-        value: "false"
+        value: "true"
       - key: CALLMEBOT_API_KEY
         sync: false
       - key: TWILIO_ACCOUNT_SID

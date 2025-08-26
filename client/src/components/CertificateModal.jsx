@@ -145,6 +145,16 @@ export default function CertificateModal({
           <div className="text-xs text-gray-300">
             Thank you for your selfless contribution. — Blood Alert
           </div>
+          
+          {/* Donation Timing Disclaimer */}
+          <div className="mt-3 p-2 bg-amber-500/20 border border-amber-500/30 rounded text-center">
+            <div className="text-xs text-amber-300 font-medium">
+              ⚠️ Next Donation Reminder
+            </div>
+            <div className="text-xs text-amber-200 mt-1">
+              Please wait <strong>1 month</strong> before your next donation for optimal health and safety.
+            </div>
+          </div>
         </div>
 
         <div className="flex items-center justify-end gap-2 mt-4">

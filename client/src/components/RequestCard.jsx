@@ -13,7 +13,14 @@ export default function RequestCard({ request, onFulfill }) {
         <div className="space-y-1">
           <div className="text-xs text-gray-400">Hospital</div>
           <div className="text-white font-semibold text-lg leading-tight">{request.hospital?.name || 'Unknown Hospital'}</div>
-          <div className="text-sm text-gray-200">Blood Type: <span className="font-semibold text-white">{request.bloodType}</span></div>
+          <div className="text-sm text-gray-200">
+            Blood Type: <span className="font-semibold text-white">{request.bloodType}</span>
+            {request.isOPlusMatch && (
+              <span className="ml-2 px-2 py-1 text-xs bg-emerald-500/20 text-emerald-300 rounded-full border border-emerald-500/40">
+                🎯 Perfect Match for O+ Donors
+              </span>
+            )}
+          </div>
           {request.createdAt && (
             <div className="text-xs text-gray-400 mt-1">Created: {new Date(request.createdAt).toLocaleString()}</div>
           )}

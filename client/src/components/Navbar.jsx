@@ -12,7 +12,8 @@ export default function Navbar() {
   }
 
   return (
-    <nav className="sticky top-0 z-40">
+    <>
+    <nav className="fixed top-0 left-0 right-0 z-40">
       <div className="container-app">
         <div className="card-glass px-6 py-4 flex items-center justify-between" style={{backdropFilter:'saturate(1.2) blur(12px)'}}>
           <Link to="/" className="flex items-center gap-2">
@@ -49,5 +50,8 @@ export default function Navbar() {
         </div>
       </div>
     </nav>
+    {/* spacer to offset fixed navbar height */}
+    <div className="h-20" />
+    </>
   )
 } 

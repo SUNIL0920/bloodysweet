@@ -32,6 +32,7 @@ export default function HospitalDashboard() {
   const [emergencyOpen, setEmergencyOpen] = useState(false);
   const [showAllFulfilled, setShowAllFulfilled] = useState(false);
   const [outgoingSwaps, setOutgoingSwaps] = useState([]);
+  const [feedbacks, setFeedbacks] = useState([]);
   const activeRef = useRef(null);
   const fulfilledRef = useRef(null);
   const mapRef = useRef(null);
@@ -58,6 +59,16 @@ export default function HospitalDashboard() {
     const { data } = await api.get(`/api/requests/${id}/ranking`);
     setRanking(data);
     setRankedDonors(data);
+  };
+
+  const fetchFeedbacks = async (id) => {
+    if (!id) return setFeedbacks([]);
+    try {
+      const { data } = await api.get(`/api/requests/${id}/feedbacks`);
+      setFeedbacks(data);
+    } catch {
+      setFeedbacks([]);
+    }
   };
 
   useEffect(() => {
@@ -102,6 +113,7 @@ export default function HospitalDashboard() {
         if (selected) {
           await fetchPledges(selected);
           await fetchRanking(selected);
+          await fetchFeedbacks(selected);
         }
       }, 10000);
     })();
@@ -168,6 +180,7 @@ export default function HospitalDashboard() {
   const createRequest = async (e) => {
     e.preventDefault();
     setError("");
+    
     try {
       const urgencyLevel = Number(
         document.getElementById("urgencyLevel")?.value || 3
@@ -255,7 +268,10 @@ export default function HospitalDashboard() {
     const hospitalCoordArr = req?.location?.coordinates;
     if (!hospitalCoordArr) return toast.error("Hospital coordinates missing");
 
-    const base = "https://router.project-osrm.org/route/v1/driving/";
+    const services = [
+      "https://router.project-osrm.org/route/v1/driving/",
+      "https://routing.openstreetmap.de/routed-car/route/v1/driving/",
+    ];
     const hospitalCoord = hospitalCoordArr.join(",");
 
     // Prefer ranked donors (already precomputed nearby), otherwise pledges
@@ -274,34 +290,58 @@ export default function HospitalDashboard() {
       .filter((d) => Array.isArray(d.coords));
 
     if (!sources.length) {
-      toast.error("No donors found nearby to optimize routes");
-      return;
+      // Attempt to refresh ranking once if empty
+      try { await fetchRanking(selected) } catch {}
+      if (!(ranking?.length)) {
+        toast.error("No donors found nearby to optimize routes");
+        return;
+      }
     }
 
     let best = { duration: Infinity, line: null, label: "" };
+    const fetchWithTimeout = (url, ms = 6000) => Promise.race([
+      fetch(url),
+      new Promise((_, r) => setTimeout(() => r(new Error('timeout')), ms)),
+    ]);
+
     for (const s of sources) {
-      try {
-        const from = s.coords.join(",");
-        const url = `${base}${from};${hospitalCoord}?geometries=geojson&overview=full&steps=false`;
-        const res = await fetch(url);
-        const json = await res.json();
-        const route = json?.routes?.[0];
-        const duration = route?.duration || Infinity;
-        const coordsLine =
-          route?.geometry?.coordinates?.map(([lng, lat]) => [lat, lng]) || [];
-        if (coordsLine.length && duration < best.duration)
-          best = {
-            duration,
-            line: { coordinates: coordsLine },
-            label: s.label,
-          };
-      } catch {}
+      const from = s.coords.join(",");
+      for (const base of services) {
+        try {
+          const url = `${base}${from};${hospitalCoord}?geometries=geojson&overview=full&steps=false`;
+          const res = await fetchWithTimeout(url);
+          if (!res || !res.ok) continue;
+          const json = await res.json();
+          const route = json?.routes?.[0];
+          const duration = route?.duration || Infinity;
+          const coordsLine =
+            route?.geometry?.coordinates?.map(([lng, lat]) => [lat, lng]) || [];
+          if (coordsLine.length && duration < best.duration) {
+            best = {
+              duration,
+              line: { coordinates: coordsLine },
+              label: s.label,
+            };
+          }
+          if (best.line) break; // got one, try next source
+        } catch {}
+      }
+      if (!best.line) {
+        // graceful fallback: draw straight line if routing service fails
+        try {
+          const coordsLine = [
+            [s.coords[1], s.coords[0]],
+            [hospitalCoordArr[1], hospitalCoordArr[0]],
+          ];
+          best = { duration: best.duration, line: { coordinates: coordsLine }, label: s.label };
+        } catch {}
+      }
     }
 
     if (best.line) {
       setRoutes([best.line]);
       const mins = Math.round(best.duration / 60);
-      toast.success(`Best route (${mins} min) optimized`);
+      toast.success(`Best route${isFinite(mins) ? ` (${mins} min)` : ''} optimized`);
     } else {
       toast.error("Failed to compute routes");
     }
@@ -363,6 +403,7 @@ export default function HospitalDashboard() {
             </div>
           </button>
         </div>
+
         <div className="card-glass p-8">
           <div className="text-sm text-gray-300">Hospital</div>
           <h2 className="section-title mt-1">Welcome, {user?.name}</h2>
@@ -428,6 +469,7 @@ export default function HospitalDashboard() {
                 setSelected(id);
                 await fetchPledges(id);
                 await fetchRanking(id);
+                await fetchFeedbacks(id);
               }}
             >
               <option value="">Select active request…</option>
@@ -454,6 +496,16 @@ export default function HospitalDashboard() {
               <Route className="h-4 w-4" /> Optimize Routes
             </button>
           </div>
+
+          {/* Donation Timing Disclaimer */}
+          <div className="mb-4 p-3 bg-amber-500/20 border border-amber-500/30 rounded-lg">
+            <div className="text-xs text-amber-300 font-medium mb-1">
+              ⚠️ Important Notice for Donors
+            </div>
+            <div className="text-xs text-amber-200">
+              For health and safety, donors should wait <strong>1 month</strong> after their last donation before donating again. This ensures proper recovery and maintains healthy blood levels.
+            </div>
+          </div>
           {center && (
             <MapView
               center={center}
@@ -473,6 +525,35 @@ export default function HospitalDashboard() {
                 } catch {}
               }}
             />
+          )}
+
+          {selected && (
+            <div className="mt-4">
+              <h4 className="text-white font-semibold mb-2">Recent Feedback</h4>
+              <div className="space-y-2">
+                {feedbacks.map((f) => (
+                  <div key={f._id} className="card-glass p-3 text-sm text-gray-200">
+                    <div className="flex items-center justify-between">
+                      <div className="text-white font-medium">
+                        {f.donor?.name || "Donor"}
+                      </div>
+                      <div className="badge">{f.rating}/5</div>
+                    </div>
+                    {f.comment && (
+                      <div className="text-xs text-gray-300 mt-1">{f.comment}</div>
+                    )}
+                    {f.at && (
+                      <div className="text-[11px] text-gray-400 mt-1">
+                        {new Date(f.at).toLocaleString()}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {feedbacks.length === 0 && (
+                  <div className="text-xs text-gray-300">No feedback yet.</div>
+                )}
+              </div>
+            </div>
           )}
         </div>
 

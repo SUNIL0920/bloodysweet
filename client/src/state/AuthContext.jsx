@@ -5,8 +5,12 @@ import { io } from 'socket.io-client'
 const AuthContext = createContext(null)
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000',
+  baseURL: 'http://localhost:5000', // Force use of correct port
 })
+
+// Debug: Log the actual API URL being used
+console.log('VITE_API_URL:', import.meta.env.VITE_API_URL)
+console.log('Final API baseURL:', 'http://localhost:5000')
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
@@ -30,7 +34,7 @@ export function AuthProvider({ children }) {
       })()
 
       // init socket
-      const s = io(import.meta.env.VITE_API_URL?.replace(/\/$/, '') || 'http://localhost:5000', { transports: ['websocket'] })
+      const s = io('http://localhost:5000', { transports: ['websocket'] })
       setSocket(s)
       // join private room after connect
       s.on('connect', () => {
@@ -72,6 +76,7 @@ export function AuthProvider({ children }) {
   const register = async (payload) => {
     setLoading(true)
     try {
+      console.log('Sending registration request to:', '/api/auth/register')
       const { data } = await api.post('/api/auth/register', payload)
       try { Object.keys(localStorage).forEach(k => { if (k.startsWith('activeArrivalCode:')) localStorage.removeItem(k) }) } catch {}
       setToken(data.token)
@@ -81,6 +86,8 @@ export function AuthProvider({ children }) {
       try { localStorage.setItem('userId', data.user?._id || '') } catch {}
       return { ok: true }
     } catch (e) {
+      console.error('Registration error:', e)
+      console.error('Error response:', e?.response?.data)
       return { ok: false, error: e?.response?.data?.message || 'Registration failed' }
     } finally {
       setLoading(false)

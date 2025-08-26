@@ -1,15 +1,39 @@
 import express from "express";
+import path from "path";
+import multer from "multer";
 import { authMiddleware } from "../middleware/authMiddleware.js";
 import { requireRole } from "../middleware/roleMiddleware.js";
 import BloodRequest from "../models/BloodRequest.js";
 import Pledge from "../models/Pledge.js";
 import SwapRequest from "../models/SwapRequest.js";
 import User from "../models/User.js";
+import fs from "fs";
 import { sendEmail } from "../services/mailer.js";
-import { sendWhatsApp } from "../services/twilio.js";
+import { sendWhatsApp } from "../services/whatsapp.js";
 // SMS/WhatsApp disabled for this deployment; using Email only
 
 const router = express.Router();
+
+// ===== File Upload (Certificates) =====
+const uploadDir = path.resolve(process.cwd(), "uploads/certificates");
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, uploadDir),
+  filename: (_req, file, cb) => {
+    const safe = file.originalname.replace(/[^a-zA-Z0-9_.-]/g, "_");
+    cb(null, `${Date.now()}_${safe}`);
+  },
+});
+const fileFilter = (_req, file, cb) => {
+  const allowed = [
+    "application/pdf",
+    "image/png",
+    "image/jpeg",
+    "image/jpg",
+  ];
+  if (allowed.includes(file.mimetype)) cb(null, true);
+  else cb(new Error("Invalid file type. Only PDF/PNG/JPG allowed."));
+};
+const upload = multer({ storage, fileFilter, limits: { fileSize: 5 * 1024 * 1024 } });
 
 async function simulateRequestsForHospital(hospital, count, io, opts = {}) {
   const bloodTypes = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
@@ -89,8 +113,17 @@ router.post("/", authMiddleware, requireRole("hospital"), async (req, res) => {
     const hospital = await User.findById(req.user._id);
     if (!hospital || hospital.role !== "hospital")
       return res.status(403).json({ message: "Forbidden" });
-    if (!hospital.location)
-      return res.status(400).json({ message: "Hospital location not set" });
+    
+    // Check if hospital has location, if not, create a default location for testing
+    let hospitalLocation = hospital.location;
+    if (!hospitalLocation) {
+      // Create a default location for hospitals without location (temporary fix)
+      hospitalLocation = {
+        type: "Point",
+        coordinates: [78.59228332256787, 10.67197801341462] // Default coordinates (Delhi area)
+      };
+      console.log(`Hospital ${hospital.name} has no location, using default coordinates`);
+    }
 
     const request = await BloodRequest.create({
       hospital: hospital._id,
@@ -98,7 +131,7 @@ router.post("/", authMiddleware, requireRole("hospital"), async (req, res) => {
       urgencyLevel,
       unitsNeeded,
       notes,
-      location: hospital.location,
+      location: hospitalLocation,
     });
 
     const populated = await request.populate("hospital", "-password");
@@ -119,9 +152,9 @@ router.post("/", authMiddleware, requireRole("hospital"), async (req, res) => {
           },
         },
       ]);
-      const compatible = donors.filter((d) =>
-        compatibilityScore(d.bloodType, bloodType)
-      );
+      // Strict same-blood-group notifications for WhatsApp
+      const compatible = donors.filter((d) => d.bloodType === bloodType);
+      try { console.log('[WA] nearby donors', { total: donors.length, compatible: compatible.length }) } catch {}
       const top = compatible.slice(0, 50);
       const emails = top.map((d) => d.email).filter(Boolean);
       if (emails.length > 0) {
@@ -177,37 +210,27 @@ router.post("/", authMiddleware, requireRole("hospital"), async (req, res) => {
           typeof d.distanceMeters === "number"
             ? (d.distanceMeters / 1000).toFixed(1) + " km"
             : "near you";
-        const more = [
-          detailsUrl ? `More info: ${detailsUrl}` : null,
-          mapsUrl ? `Navigate: ${mapsUrl}` : null,
-        ]
-          .filter(Boolean)
-          .join(" | ");
-        const msg = `Emergency ${bloodType} needed at ${
-          hospital.name
-        } (${distanceKm}).${more ? " " + more : ""}`;
+        const msg = [
+          '⚠ Alert Blood Donation Request',
+          '',
+          `🩸 Blood Type: ${bloodType}`,
+          `🏥 Hospital: ${hospital.name}`,
+          `📊 Units Needed: ${unitsNeeded}`,
+          `📍 Location: (${distanceKm} away)`,
+          '',
+          mapsUrl ? `🗺 Navigate: ${mapsUrl}` : null,
+        ].filter(Boolean).join('\n');
         try {
-          const resp = await sendWhatsApp({
-            to: phone,
-            body: msg,
-            contentSid,
-            contentVariables: contentSid
-              ? { 1: hospital.name, 2: bloodType }
-              : undefined,
-          });
-          whatsappResults.push({
-            to: phone,
-            sid: resp?.sid,
-            status: resp?.status || "queued",
-          });
+          const resp = await sendWhatsApp({ phone: phone.replace(/^whatsapp:/, ''), text: msg });
+          whatsappResults.push({ to: phone, sid: resp?.sid, ok: resp?.ok !== false });
         } catch (err) {
-          console.log("WhatsApp notify failed:", phone, err?.message);
-          whatsappResults.push({ to: phone, error: err?.message || "failed" });
+          try { console.error('[WA] send error', phone, err?.message || err) } catch {}
+          whatsappResults.push({ to: phone, error: err?.message || 'failed' });
         }
       }
 
       // If no donor message was queued/sent, send to hospital contact for verification
-      const deliveredCount = whatsappResults.filter((r) => r.sid).length;
+      const deliveredCount = whatsappResults.filter((r) => r.sid || r.ok).length;
       if (deliveredCount === 0 && hospital?.phone) {
         const phone = hospital.phone.startsWith("whatsapp:")
           ? hospital.phone
@@ -218,7 +241,7 @@ router.post("/", authMiddleware, requireRole("hospital"), async (req, res) => {
           detailsUrl ? ` More info: ${detailsUrl}` : ""
         }`;
         try {
-          await sendWhatsApp({ to: phone, body: msg });
+          await sendWhatsApp({ phone: phone.replace(/^whatsapp:/, ''), text: msg });
         } catch (err) {
           console.log("WhatsApp hospital fallback failed:", err?.message);
         }
@@ -227,6 +250,7 @@ router.post("/", authMiddleware, requireRole("hospital"), async (req, res) => {
       // Expose notification counts in response headers for debugging without changing payload shape
       res.set("X-Notify-Email", String(emails.length || 0));
       res.set("X-Notify-WhatsApp-Sent", String(deliveredCount));
+      try { console.log('[WA] results', whatsappResults) } catch {}
     } catch (e) {
       console.log("Email notify failed:", e?.message);
     }
@@ -329,7 +353,7 @@ router.post(
         : null;
       if (last) {
         const nextEligible = new Date(
-          last.getTime() + 56 * 24 * 60 * 60 * 1000
+          last.getTime() + 30 * 24 * 60 * 60 * 1000
         );
         if (new Date() < nextEligible) {
           return res.status(400).json({
@@ -443,6 +467,45 @@ router.get(
   }
 );
 
+// Hospital: view donor feedback for a specific request they own
+router.get(
+  "/:id/feedbacks",
+  authMiddleware,
+  requireRole("hospital"),
+  async (req, res) => {
+    try {
+      const reqId = req.params.id;
+      const request = await BloodRequest.findOne({
+        _id: reqId,
+        hospital: req.user._id,
+      });
+      if (!request)
+        return res.status(404).json({ message: "Request not found" });
+
+      const feedbacks = await Pledge.find({
+        request: reqId,
+        feedbackRating: { $exists: true },
+      })
+        .populate("donor", "name bloodType")
+        .sort({ feedbackAt: -1 })
+        .lean();
+
+      // sanitize output
+      const data = feedbacks.map((f) => ({
+        _id: f._id,
+        donor: f.donor ? { name: f.donor.name, bloodType: f.donor.bloodType } : null,
+        rating: f.feedbackRating,
+        comment: f.feedbackComment || "",
+        at: f.feedbackAt,
+      }));
+
+      res.json(data);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to fetch feedbacks" });
+    }
+  }
+);
+
 // Hospital: verify donor arrival via code and optionally auto-fulfill
 router.post(
   "/:id/verify-arrival",
@@ -493,12 +556,12 @@ router.post(
         .get("io")
         .emit("pledge:arrived", { requestId: reqId, pledgeId: pledge._id });
 
-      // Award credit points to donor upon successful arrival
+      // Award credit points to donor upon successful arrival and set cooldown start
       try {
         // Award Blood Credits
         await User.updateOne(
           { _id: pledge.donor },
-          { $inc: { creditPoints: 10 } }
+          { $inc: { creditPoints: 10 }, $set: { lastDonationDate: new Date() } }
         );
         // clear active code on donor side via event
         req.app
@@ -655,9 +718,54 @@ router.get("/hotspots", async (_req, res) => {
 });
 
 // Improve nearby by adding compatibility score
-// Strict same-group compatibility
+// Blood type compatibility - O+ can donate to O+ and O-
 function compatibilityScore(donorType, neededType) {
-  return donorType && neededType && donorType === neededType ? 1 : 0;
+  if (!donorType || !neededType) return 0;
+  
+  // Exact match is always compatible (highest priority)
+  if (donorType === neededType) return 2;
+  
+  // O+ donors can donate to O+ recipients (same blood type)
+  if (donorType === 'O+') {
+    return (neededType === 'O+') ? 2 : 0;
+  }
+  
+  // O- donors can donate to all blood types (universal donor)
+  if (donorType === 'O-') {
+    return 1;
+  }
+  
+  // A+ donors can donate to A+ and AB+
+  if (donorType === 'A+') {
+    return (neededType === 'A+' || neededType === 'AB+') ? 1 : 0;
+  }
+  
+  // A- donors can donate to A+, A-, AB+, AB-
+  if (donorType === 'A-') {
+    return (neededType === 'A+' || neededType === 'A-' || neededType === 'AB+' || neededType === 'AB-') ? 1 : 0;
+  }
+  
+  // B+ donors can donate to B+ and AB+
+  if (donorType === 'B+') {
+    return (neededType === 'B+' || neededType === 'AB+') ? 1 : 0;
+  }
+  
+  // B- donors can donate to B+, B-, AB+, AB-
+  if (donorType === 'B-') {
+    return (neededType === 'B+' || neededType === 'B-' || neededType === 'AB+' || neededType === 'AB-') ? 1 : 0;
+  }
+  
+  // AB+ donors can only donate to AB+
+  if (donorType === 'AB+') {
+    return (neededType === 'AB+') ? 1 : 0;
+  }
+  
+  // AB- donors can donate to AB+ and AB-
+  if (donorType === 'AB-') {
+    return (neededType === 'AB+' || neededType === 'AB-') ? 1 : 0;
+  }
+  
+  return 0;
 }
 
 // Override existing nearby handler to append scores and sort
@@ -668,8 +776,31 @@ router.get(
   async (req, res) => {
     try {
       const donor = await User.findById(req.user._id).lean();
-      if (!donor?.location?.coordinates)
-        return res.status(400).json({ message: "Donor location not set" });
+      if (!donor?.location?.coordinates) {
+        // If donor has no location, try to use a default location or return all requests
+        console.log(`Donor ${donor?.name} has no location, using fallback logic`);
+        
+        // Get all active requests without location filtering
+        const allRequests = await BloodRequest.find({ status: "active" })
+          .populate("hospital", "-password")
+          .lean();
+        
+        const scored = allRequests.map((r) => {
+          const compatScore = compatibilityScore(donor.bloodType, r.bloodType);
+          return {
+            ...r,
+            compatibilityScore: compatScore,
+            distanceKm: 0, // No distance calculation possible
+            urgencyScore: (r.urgencyLevel || 3) * 20,
+            donorBloodType: donor.bloodType,
+            requestBloodType: r.bloodType,
+            isExactMatch: donor.bloodType === r.bloodType,
+            isOPlusMatch: donor.bloodType === 'O+' && r.bloodType === 'O+',
+          };
+        }).sort((a, b) => b.compatibilityScore - a.compatibilityScore);
+        
+        return res.json(scored);
+      }
 
       const [lng, lat] = donor.location.coordinates;
 
@@ -680,8 +811,8 @@ router.get(
             distanceField: "distanceMeters",
             spherical: true,
             maxDistance: 50000, // 50km
-            // Strictly show only requests matching donor blood type
-            query: { status: "active", bloodType: donor.bloodType },
+            // Show all active requests - we'll filter by compatibility later
+            query: { status: "active" },
           },
         },
         {
@@ -699,22 +830,44 @@ router.get(
       const scored = results
         .map((r) => {
           const distanceKm = (r.distanceMeters || 0) / 1000;
+          const compatScore = compatibilityScore(
+            donor.bloodType,
+            r.bloodType
+          );
+          
+          // Enhanced scoring for O+ donors seeing O+ requests
+          let enhancedScore = compatScore;
+          if (donor.bloodType === 'O+' && r.bloodType === 'O+') {
+            enhancedScore = 10; // Highest priority for O+ donors seeing O+ requests
+          }
+          
           const urgencyScore = computeUrgencyScore({
             donor,
             request: r,
             distanceKm,
           });
+          
           return {
             ...r,
-            compatibilityScore: compatibilityScore(
-              donor.bloodType,
-              r.bloodType
-            ),
+            compatibilityScore: enhancedScore,
             distanceKm,
             urgencyScore,
+            // Add donor blood type for debugging
+            donorBloodType: donor.bloodType,
+            // Add request blood type for debugging
+            requestBloodType: r.bloodType,
+            // Add enhanced compatibility info
+            isExactMatch: donor.bloodType === r.bloodType,
+            isOPlusMatch: donor.bloodType === 'O+' && r.bloodType === 'O+',
           };
         })
-        .sort((a, b) => b.urgencyScore - a.urgencyScore);
+        .sort((a, b) => {
+          // Sort by compatibility score first, then by urgency
+          if (a.compatibilityScore !== b.compatibilityScore) {
+            return b.compatibilityScore - a.compatibilityScore;
+          }
+          return b.urgencyScore - a.urgencyScore;
+        });
 
       res.json(scored);
     } catch (err) {
@@ -742,6 +895,84 @@ router.get(
     }
   }
 );
+
+// Test endpoint to create a sample blood request (for development/testing)
+router.post("/test/create-request", async (req, res) => {
+  try {
+    // Find any hospital user
+    const hospital = await User.findOne({ role: "hospital" });
+    if (!hospital) {
+      return res.status(404).json({ message: "No hospital found in database" });
+    }
+
+    // Create a test O+ blood request
+    const request = await BloodRequest.create({
+      hospital: hospital._id,
+      bloodType: "O+",
+      urgencyLevel: 4,
+      unitsNeeded: 2,
+      notes: "Test request for O+ blood",
+      location: hospital.location || {
+        type: "Point",
+        coordinates: [78.59228332256787, 10.67197801341462]
+      },
+      status: "active"
+    });
+
+    const populated = await request.populate("hospital", "-password");
+    
+    // Emit socket event
+    if (req.app.get("io")) {
+      req.app.get("io").emit("request:new", populated);
+    }
+
+    res.json({ 
+      message: "Test request created successfully", 
+      request: populated 
+    });
+  } catch (err) {
+    console.error("Test request creation failed:", err);
+    res.status(500).json({ message: "Failed to create test request", error: err.message });
+  }
+});
+
+// Debug endpoint to check database state
+router.get("/test/debug", async (req, res) => {
+  try {
+    const users = await User.find({}).select('-password').lean();
+    const requests = await BloodRequest.find({}).populate('hospital', '-password').lean();
+    
+    res.json({
+      users: users.map(u => ({
+        id: u._id,
+        name: u.name,
+        email: u.email,
+        role: u.role,
+        bloodType: u.bloodType,
+        hasLocation: !!u.location,
+        coordinates: u.location?.coordinates
+      })),
+      requests: requests.map(r => ({
+        id: r._id,
+        bloodType: r.bloodType,
+        status: r.status,
+        hospital: r.hospital?.name,
+        hasLocation: !!r.location,
+        coordinates: r.location?.coordinates
+      })),
+      summary: {
+        totalUsers: users.length,
+        totalRequests: requests.length,
+        activeRequests: requests.filter(r => r.status === 'active').length,
+        hospitals: users.filter(u => u.role === 'hospital').length,
+        donors: users.filter(u => u.role === 'donor').length
+      }
+    });
+  } catch (err) {
+    console.error("Debug endpoint failed:", err);
+    res.status(500).json({ message: "Debug failed", error: err.message });
+  }
+});
 
 // Donor: redeem free health checkup if credits >= 100
 router.post(
@@ -780,6 +1011,48 @@ router.put(
       res.json({ ok: true, availableNow });
     } catch (err) {
       res.status(500).json({ message: "Failed to update availability" });
+    }
+  }
+);
+
+// Donor: upload medical certificate (PDF/JPG/PNG)
+router.post(
+  "/certificates/upload",
+  authMiddleware,
+  requireRole("donor"),
+  upload.single("file"),
+  async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+      const url = `/uploads/certificates/${req.file.filename}`;
+      const meta = {
+        name: req.body?.name || req.file.originalname,
+        url,
+        mimeType: req.file.mimetype,
+        size: req.file.size,
+      };
+      await User.updateOne(
+        { _id: req.user._id },
+        { $push: { certificates: meta } }
+      );
+      res.json({ ok: true, certificate: meta });
+    } catch (err) {
+      res.status(500).json({ message: "Failed to upload certificate" });
+    }
+  }
+);
+
+// Donor: list my certificates
+router.get(
+  "/certificates/mine",
+  authMiddleware,
+  requireRole("donor"),
+  async (req, res) => {
+    try {
+      const user = await User.findById(req.user._id).lean();
+      res.json(user?.certificates || []);
+    } catch (err) {
+      res.status(500).json({ message: "Failed to fetch certificates" });
     }
   }
 );

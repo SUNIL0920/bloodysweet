@@ -31,17 +31,33 @@ export default function DonorProfile() {
     name: "",
     email: "",
     age: "",
+    gender: "",
     phone: "",
     bloodType: "",
     whatsappOptIn: false,
+    medicalConditions: "",
   });
   const [saving, setSaving] = useState(false);
+  const [certificates, setCertificates] = useState([]);
+  const [uploading, setUploading] = useState(false);
+
+  // Prevent background scroll when modal is open
+  useEffect(() => {
+    if (!isEditing) return;
+    const prev = document?.body?.style?.overflow;
+    try { document.body.style.overflow = 'hidden'; } catch {}
+    return () => { try { document.body.style.overflow = prev || ''; } catch {} };
+  }, [isEditing]);
 
   useEffect(() => {
     (async () => {
       try {
         const { data } = await api.get("/api/requests/pledges/mine");
         setPledges(data);
+      } catch {}
+      try {
+        const { data } = await api.get("/api/requests/certificates/mine");
+        setCertificates(data || []);
       } catch {}
     })();
   }, []);
@@ -52,9 +68,11 @@ export default function DonorProfile() {
         name: user.name || "",
         email: user.email || "",
         age: user.age || "",
+        gender: user.gender || "",
         phone: user.phone || "",
         bloodType: user.bloodType || "O+",
         whatsappOptIn: user.whatsappOptIn || false,
+        medicalConditions: user.medicalConditions || "",
       });
     }
   }, [user]);
@@ -92,6 +110,7 @@ export default function DonorProfile() {
     try {
       const { data } = await api.put("/api/auth/profile", editForm);
       setUser(data.user);
+      try { await refreshUser(); } catch {}
       setIsEditing(false);
       toast.success("Profile updated successfully!");
     } catch (e) {
@@ -106,9 +125,11 @@ export default function DonorProfile() {
       name: user.name || "",
       email: user.email || "",
       age: user.age || "",
+      gender: user.gender || "",
       phone: user.phone || "",
       bloodType: user.bloodType || "O+",
       whatsappOptIn: user.whatsappOptIn || false,
+      medicalConditions: user.medicalConditions || "",
     });
     setIsEditing(false);
   };
@@ -135,6 +156,7 @@ export default function DonorProfile() {
                 <ShieldCheck className="h-3.5 w-3.5" /> Verified
               </div>
               <button
+                type="button"
                 onClick={handleEdit}
                 className="btn-secondary"
                 title="Edit Profile"
@@ -187,6 +209,16 @@ export default function DonorProfile() {
                 </div>
                 <div className="text-white font-medium">
                   {user?.age || "—"} years
+                </div>
+              </div>
+
+              <div className="card-glass p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="h-4 w-4 text-gray-400">🧑</span>
+                  <span className="text-xs text-gray-300">Gender</span>
+                </div>
+                <div className="text-white font-medium">
+                  {user?.gender || "—"}
                 </div>
               </div>
 
@@ -347,6 +379,16 @@ export default function DonorProfile() {
             hospital.
           </div>
 
+          {/* Donation Timing Disclaimer */}
+          <div className="mt-4 p-3 bg-amber-500/20 border border-amber-500/30 rounded-lg">
+            <div className="text-xs text-amber-300 font-medium mb-1">
+              ⚠️ Important Notice
+            </div>
+            <div className="text-xs text-amber-200">
+              For your health and safety, please wait <strong>1 month</strong> after your last donation before donating again. This ensures your body has sufficient time to recover and maintain healthy blood levels.
+            </div>
+          </div>
+
           <div className="mt-6">
             <div className="text-sm text-gray-300 mb-2">My Certificates</div>
             <div className="space-y-2">
@@ -388,15 +430,27 @@ export default function DonorProfile() {
       {/* Edit Profile Modal */}
       {isEditing && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-          <div className="card-glass p-6 w-full max-w-md">
+          <div className="card-glass p-6 w-full max-w-md max-h-[80vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-white">Edit Profile</h3>
-              <button
-                onClick={handleCancel}
-                className="text-gray-400 hover:text-white"
-              >
-                <X className="h-5 w-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  className="btn-primary px-3 py-1 text-sm"
+                  disabled={saving}
+                >
+                  {saving ? "Saving…" : "Save"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCancel}
+                  className="text-gray-400 hover:text-white"
+                  title="Close"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
             </div>
 
             <form
@@ -434,6 +488,27 @@ export default function DonorProfile() {
                     required
                   />
                 </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">Gender</label>
+                  <select name="gender" className="input-field" value={editForm.gender} onChange={onChange}>
+                    <option value="">Select…</option>
+                    <option value="male">Male</option>
+                    <option value="female">Female</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Age</label>
+                  <input type="number" name="age" className="input-field" value={editForm.age} onChange={onChange} min="16" max="100" />
+                </div>
+              </div>
+
+              <div>
+                <label className="label">Medical Conditions (optional)</label>
+                <textarea name="medicalConditions" className="input-field" rows="3" value={editForm.medicalConditions} onChange={onChange} placeholder="E.g., diabetes, hypertension, etc." />
               </div>
 
               <div>

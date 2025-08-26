@@ -29,6 +29,7 @@ const UserSchema = new Schema({
   email: { type: String, required: true, unique: true, index: true },
   password: { type: String, required: true, select: false },
   age: { type: Number, min: 16, max: 100 },
+  gender: { type: String, enum: ['male','female','other'], default: undefined },
   bloodType: {
     type: String,
     required: true,
@@ -52,6 +53,29 @@ const UserSchema = new Schema({
   capacityUnits: { type: Number, min: 0, max: 50, default: 0 }, // for hospitals: stock units per blood
   lastHealthCheckAt: { type: Date },
   whatsappOptIn: { type: Boolean, default: false },
+  // medical information (self-reported)
+  medicalConditions: { type: String }, // brief notes, e.g., chronic conditions
+  certificates: [{
+    name: { type: String },
+    url: { type: String },
+    mimeType: { type: String },
+    size: { type: Number },
+    uploadedAt: { type: Date, default: Date.now }
+  }],
+  // Hospital verification (for users with role === 'hospital')
+  verification: {
+    status: { type: String, enum: ['unverified','pending','verified','rejected'], default: 'unverified' },
+    documents: [{
+      type: { type: String }, // e.g., license, registrationProof, authorityLetter, accreditation
+      name: { type: String },
+      url: { type: String },
+      mimeType: { type: String },
+      size: { type: Number },
+      uploadedAt: { type: Date, default: Date.now }
+    }],
+    notes: { type: String },
+    reviewedAt: { type: Date }
+  },
   // Password reset fields
   resetPasswordToken: { type: String },
   resetPasswordExpires: { type: Date }

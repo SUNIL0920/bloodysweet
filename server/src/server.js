@@ -9,6 +9,8 @@ import authRoutes from "./routes/auth.js";
 import hospitalRoutes from "./routes/hospitals.js";
 import notificationRoutes from "./routes/notifications.js";
 import requestRoutes from "./routes/requests.js";
+import path from "path";
+import fs from "fs";
 // Ensure models are initialized so indexes are created on startup
 import BloodRequest from "./models/BloodRequest.js";
 import Pledge from "./models/Pledge.js";
@@ -16,19 +18,71 @@ import SwapRequest from "./models/SwapRequest.js";
 import User from "./models/User.js";
 
 dotenv.config();
+// Log critical WhatsApp env flags on startup
+try {
+  console.log('[WA] env', {
+    enabled: (process.env.WHATSAPP_ENABLED || '').toString(),
+    from: process.env.TWILIO_WHATSAPP_FROM || null,
+    hasSid: !!process.env.TWILIO_ACCOUNT_SID,
+    hasToken: !!process.env.TWILIO_AUTH_TOKEN,
+  });
+} catch {}
 
 const app = express();
 const httpServer = http.createServer(app);
 const io = new SocketIOServer(httpServer, {
-  cors: { origin: process.env.CORS_ORIGIN || "*" },
+  cors: { 
+    origin: [
+      'http://localhost:5173',
+      'http://localhost:5174',
+      'http://localhost:3000',
+      'http://localhost:5175'
+    ],
+    credentials: true
+  },
 });
 
 app.set("io", io);
 
 // Middleware
-app.use(cors({ origin: process.env.CORS_ORIGIN || "*", credentials: true }));
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:5174', 
+  'http://localhost:3000',
+  'http://localhost:5175'
+];
+
+app.use(cors({ 
+  origin: function (origin, callback) {
+    // Debug: Log the origin being requested
+    console.log('CORS request from origin:', origin);
+    
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) {
+      console.log('No origin, allowing request');
+      return callback(null, true);
+    }
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      console.log('Origin allowed:', origin);
+      callback(null, true);
+    } else {
+      console.log('Origin blocked:', origin);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true 
+}));
 app.use(express.json());
 app.use(morgan("dev"));
+// Serve uploads statically
+try {
+  const up = path.resolve(process.cwd(), "uploads");
+  if (!fs.existsSync(up)) fs.mkdirSync(up, { recursive: true });
+  const certs = path.join(up, "certificates");
+  if (!fs.existsSync(certs)) fs.mkdirSync(certs, { recursive: true });
+  app.use("/uploads", express.static(up));
+} catch {}
 
 // Routes
 app.use("/api/auth", authRoutes);
