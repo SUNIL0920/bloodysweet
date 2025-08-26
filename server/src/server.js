@@ -139,17 +139,30 @@ async function start() {
       });
     });
 
-    httpServer.listen(PORT, () => {
-      console.log(`Server listening on port ${PORT}`);
-      console.log(`API available at http://localhost:${PORT}`);
-    });
+    // Only start HTTP server if not in Vercel environment
+    if (process.env.VERCEL !== "1") {
+      httpServer.listen(PORT, () => {
+        console.log(`Server listening on port ${PORT}`);
+        console.log(`API available at http://localhost:${PORT}`);
+      });
+    } else {
+      console.log("Running in Vercel serverless environment");
+    }
   } catch (err) {
     console.error("Failed to start server", err);
     console.log(
       "If MongoDB is not running, please start it or set MONGO_URI environment variable"
     );
-    process.exit(1);
+    if (process.env.VERCEL !== "1") {
+      process.exit(1);
+    }
   }
 }
 
-start();
+// For Vercel serverless, export the app
+export default app;
+
+// Only call start() if not in Vercel
+if (process.env.VERCEL !== "1") {
+  start();
+}
