@@ -9,8 +9,8 @@ const api = axios.create({
 });
 
 // Debug: Log the actual API URL being used
-console.log('VITE_API_URL:', import.meta.env.VITE_API_URL)
-console.log('Final API baseURL:', 'http://localhost:5000')
+console.log('REACT_APP_API_URL:', process.env.REACT_APP_API_URL)
+console.log('Final API baseURL:', process.env.REACT_APP_API_URL || 'http://localhost:5000')
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
