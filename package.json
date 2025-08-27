@@ -1,0 +1,25 @@
+{
+  "name": "blood-alert-fullstack",
+  "version": "1.0.0",
+  "description": "Complete Blood Alert Application - Backend + Frontend",
+  "main": "server/src/server.js",
+  "scripts": {
+    "build": "cd client && npm install && npm run build",
+    "start:server": "cd server && npm install && npm start",
+    "start:full": "npm run build && npm run start:server",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "cd server && npm run dev",
+    "dev:client": "cd client && npm run dev",
+    "install:all": "npm install && cd server && npm install && cd ../client && npm install"
+  },
+  "keywords": ["blood-donation", "emergency", "healthcare", "fullstack"],
+  "author": "Your Name",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
