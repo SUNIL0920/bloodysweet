@@ -44,56 +44,16 @@ const io = new SocketIOServer(httpServer, {
 
 app.set("io", io);
 
-// Middleware
-const allowedOrigins = [
-  'http://localhost:5173',
-  'http://localhost:5174', 
-  'http://localhost:3000',
-  'http://localhost:5175',
-  // Production domains - add your Vercel domain here
-  process.env.CORS_ORIGIN,
-  // Add common Vercel domains
-  'https://*.vercel.app',
-  'https://*.vercel.com'
-].filter(Boolean);
-
+// Middleware - Simplified CORS for production
 app.use(cors({ 
-  origin: function (origin, callback) {
-    // Debug: Log the origin being requested (only in development)
-    if (process.env.NODE_ENV === 'development') {
-      console.log('CORS request from origin:', origin);
-    }
-    
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) {
-      if (process.env.NODE_ENV === 'development') {
-        console.log('No origin, allowing request');
-      }
-      return callback(null, true);
-    }
-    
-    // Check if origin is in allowed list
-    const isAllowed = allowedOrigins.some(allowed => {
-      if (allowed.includes('*')) {
-        // Handle wildcard domains like *.netlify.app
-        const domain = allowed.replace('*.', '');
-        return origin.endsWith(domain);
-      }
-      return allowed === origin;
-    });
-    
-    if (isAllowed) {
-      if (process.env.NODE_ENV === 'development') {
-        console.log('Origin allowed:', origin);
-      }
-      callback(null, true);
-    } else {
-      if (process.env.NODE_ENV === 'development') {
-        console.log('Origin blocked:', origin);
-      }
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
+  origin: [
+    'http://localhost:5173',
+    'http://localhost:5174', 
+    'http://localhost:3000',
+    'http://localhost:5175',
+    process.env.CORS_ORIGIN,
+    'https://bloodyfro.vercel.app'
+  ].filter(Boolean),
   credentials: true 
 }));
 app.use(express.json());
