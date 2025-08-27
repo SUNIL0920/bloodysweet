@@ -5,14 +5,14 @@ import { io } from 'socket.io-client'
 const AuthContext = createContext(null)
 
 // Force environment variable usage
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000'
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
 
 const api = axios.create({
   baseURL: API_URL,
 });
 
 // Debug: Log the actual API URL being used
-console.log('REACT_APP_API_URL:', process.env.REACT_APP_API_URL)
+console.log('REACT_APP_API_URL:', import.meta.env.VITE_API_URL)
 console.log('Final API baseURL:', API_URL)
 console.log('Environment check:', process.env.NODE_ENV)
 
