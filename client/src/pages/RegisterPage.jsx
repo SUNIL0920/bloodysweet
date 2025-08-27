@@ -633,17 +633,7 @@ export default function RegisterPage() {
                     </div>
                   )}
 
-                  {/* Debug Info (remove in production) */}
-                  {process.env.NODE_ENV === 'development' && (
-                    <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-700 text-xs text-gray-300">
-                      <div className="font-medium mb-2">Debug Info:</div>
-                      <div>Coordinates: {coords ? `[${coords[0]}, ${coords[1]}]` : 'Not set'}</div>
-                      <div>Name: {form.role === 'donor' ? form.name : form.hospitalName}</div>
-                      <div>Email: {form.email}</div>
-                      <div>Blood Type: {form.bloodType}</div>
-                      <div>Role: {form.role}</div>
-                    </div>
-                  )}
+                  
 
                   {/* Submit Button */}
                   <button 
