@@ -1,0 +1,32 @@
+[build]
+  command = "npm install"
+  publish = "."
+  functions = "."
+
+[build.environment]
+  NODE_VERSION = "18"
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/server"
+  status = 200
+
+[[redirects]]
+  from = "/health"
+  to = "/.netlify/functions/server"
+  status = 200
+
+[[redirects]]
+  from = "/test-db"
+  to = "/.netlify/functions/server"
+  status = 200
+
+[[redirects]]
+  from = "/"
+  to = "/.netlify/functions/server"
+  status = 200
+
+[[redirects]]
+  from = "/*"
+  to = "/.netlify/functions/server"
+  status = 200

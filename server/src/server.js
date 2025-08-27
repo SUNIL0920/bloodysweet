@@ -67,16 +67,7 @@ try {
   app.use("/uploads", express.static(up));
 } catch {}
 
-// Serve frontend build files
-try {
-  const clientBuildPath = path.resolve(process.cwd(), "../client/dist");
-  if (fs.existsSync(clientBuildPath)) {
-    app.use(express.static(clientBuildPath));
-    console.log("Serving frontend from:", clientBuildPath);
-  }
-} catch (error) {
-  console.log("Frontend build not found, serving API only");
-}
+
 
 // Routes
 app.use("/api/auth", authRoutes);
@@ -124,19 +115,7 @@ app.get("/test-db", async (_req, res) => {
   }
 });
 
-// Catch-all route to serve frontend (must be last)
-app.get("*", (req, res) => {
-  try {
-    const clientBuildPath = path.resolve(process.cwd(), "../client/dist/index.html");
-    if (fs.existsSync(clientBuildPath)) {
-      res.sendFile(clientBuildPath);
-    } else {
-      res.json({ message: "Frontend not built yet" });
-    }
-  } catch (error) {
-    res.json({ message: "Frontend not available" });
-  }
-});
+
 
 const PORT = process.env.PORT || 5000;
 
