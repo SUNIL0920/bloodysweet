@@ -9,7 +9,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
 
 const api = axios.create({
   baseURL: API_URL,
-  timeout: 10000, // Add timeout for production
+  timeout: 30000, // Increased timeout for production deployment
 });
 
 // Debug: Log the actual API URL being used (only in development)
