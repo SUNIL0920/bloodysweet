@@ -9,12 +9,15 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
 
 const api = axios.create({
   baseURL: API_URL,
+  timeout: 10000, // Add timeout for production
 });
 
-// Debug: Log the actual API URL being used
-console.log('REACT_APP_API_URL:', import.meta.env.VITE_API_URL)
-console.log('Final API baseURL:', API_URL)
-console.log('Environment check:', process.env.NODE_ENV)
+// Debug: Log the actual API URL being used (only in development)
+if (import.meta.env.DEV) {
+  console.log('VITE_API_URL:', import.meta.env.VITE_API_URL)
+  console.log('Final API baseURL:', API_URL)
+  console.log('Environment check:', import.meta.env.MODE)
+}
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)

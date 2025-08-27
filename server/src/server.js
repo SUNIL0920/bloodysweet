@@ -50,26 +50,47 @@ const allowedOrigins = [
   'http://localhost:5174', 
   'http://localhost:3000',
   'http://localhost:5175',
-  // Production domains
-  process.env.CORS_ORIGIN
+  // Production domains - add your Vercel domain here
+  process.env.CORS_ORIGIN,
+  // Add common Vercel domains
+  'https://*.vercel.app',
+  'https://*.vercel.com'
 ].filter(Boolean);
 
 app.use(cors({ 
   origin: function (origin, callback) {
-    // Debug: Log the origin being requested
-    console.log('CORS request from origin:', origin);
+    // Debug: Log the origin being requested (only in development)
+    if (process.env.NODE_ENV === 'development') {
+      console.log('CORS request from origin:', origin);
+    }
     
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) {
-      console.log('No origin, allowing request');
+      if (process.env.NODE_ENV === 'development') {
+        console.log('No origin, allowing request');
+      }
       return callback(null, true);
     }
     
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      console.log('Origin allowed:', origin);
+    // Check if origin is in allowed list
+    const isAllowed = allowedOrigins.some(allowed => {
+      if (allowed.includes('*')) {
+        // Handle wildcard domains like *.netlify.app
+        const domain = allowed.replace('*.', '');
+        return origin.endsWith(domain);
+      }
+      return allowed === origin;
+    });
+    
+    if (isAllowed) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Origin allowed:', origin);
+      }
       callback(null, true);
     } else {
-      console.log('Origin blocked:', origin);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Origin blocked:', origin);
+      }
       callback(new Error('Not allowed by CORS'));
     }
   },
@@ -96,12 +117,11 @@ app.get("/", (_req, res) => {
   res.json({ status: "ok", message: "Blood Alert API" });
 });
 
-// Health check endpoint for Render
+// Health check endpoint for Vercel
 app.get("/health", (_req, res) => {
   res.json({ 
     status: "healthy", 
     timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
     environment: process.env.NODE_ENV || "development"
   });
 });
