@@ -86,6 +86,33 @@ app.get("/health", (_req, res) => {
   });
 });
 
+// Database connection test endpoint
+app.get("/test-db", async (_req, res) => {
+  try {
+    const dbStatus = mongoose.connection.readyState;
+    const statusMap = {
+      0: "disconnected",
+      1: "connected", 
+      2: "connecting",
+      3: "disconnecting"
+    };
+    
+    res.json({
+      status: "ok",
+      database: statusMap[dbStatus] || "unknown",
+      readyState: dbStatus,
+      timestamp: new Date().toISOString(),
+      mongoUri: process.env.MONGO_URI ? "Set" : "Not Set"
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: "error",
+      message: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 const PORT = process.env.PORT || 5000;
 
 async function start() {
