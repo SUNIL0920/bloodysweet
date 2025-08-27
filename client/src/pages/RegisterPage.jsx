@@ -117,7 +117,15 @@ export default function RegisterPage() {
           fd.append('file', file)
           fd.append('type', type)
           const { data } = await api.post('/api/hospitals/verification/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
-          return { type, status: data?.status, verdict: data?.document?.analysis?.verdict, missing: data?.document?.analysis?.regex?.missing || [], ai: !!data?.document?.analysis?.aiSummary }
+          // return both a display-friendly summary and the raw meta so we can attach on register
+          return {
+            type,
+            status: data?.status,
+            verdict: data?.document?.analysis?.verdict,
+            missing: data?.document?.analysis?.regex?.missing || [],
+            ai: !!data?.document?.analysis?.aiSummary,
+            meta: data?.document // meta includes url, name, mimeType, size, analysis
+          }
         }
         
         const results = []
@@ -144,7 +152,7 @@ export default function RegisterPage() {
     }
     
     const payload = { 
-      ...form, 
+  ...form, 
       location: { type: 'Point', coordinates: coords },
       name: form.role === 'hospital' ? form.hospitalName : form.name
     }
@@ -152,6 +160,19 @@ export default function RegisterPage() {
     console.log('Registration payload:', payload)
     console.log('Coordinates:', coords)
     
+    // If hospital and we uploaded docs earlier, include them so server can attach on creation
+    if (form.role === 'hospital') {
+      const uploadedDocs = []
+      const collect = (r) => {
+        if (r?.meta && r.meta.url) uploadedDocs.push(r.meta)
+      }
+      try { collect(results?.[0]) } catch {}
+      try { collect(results?.[1]) } catch {}
+      try { collect(results?.[2]) } catch {}
+      try { collect(results?.[3]) } catch {}
+      if (uploadedDocs.length) payload.uploadedDocs = uploadedDocs
+    }
+
     const res = await register(payload)
     if (res.ok) {
       if (form.role === 'donor' && certFile) {
@@ -627,7 +648,7 @@ export default function RegisterPage() {
                   {/* Submit Button */}
                   <button 
                     disabled={loading || !coords} 
-                    className="btn-primary w-full justify-center text-base py-3 text-lg font-medium"
+                    className="btn-primary w-full justify-center py-3 text-lg font-medium"
                   >
                     <Droplets className="h-5 w-5" /> 
                     {loading ? 'Creating Account...' : `Register as ${form.role === 'donor' ? 'Donor' : 'Hospital'}`}

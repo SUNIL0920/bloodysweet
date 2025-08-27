@@ -58,6 +58,26 @@ router.post('/register', async (req, res) => {
       gender: cleanGender,
       medicalConditions
     });
+    // If client provided pre-uploaded documents (from /api/hospitals/verification/upload),
+    // attach them to the new hospital user's verification.documents.
+    // Expect uploadedDocs to be an array of objects with at least { type, url, name, mimeType, size }
+    const uploadedDocs = Array.isArray(req.body.uploadedDocs) ? req.body.uploadedDocs : undefined
+    if (uploadedDocs && role === 'hospital') {
+      user.verification = user.verification || {}
+      user.verification.documents = (user.verification.documents || []).concat(uploadedDocs.map(d => ({
+        type: d.type,
+        name: d.name,
+        url: d.url,
+        mimeType: d.mimeType,
+        size: d.size,
+        uploadedAt: d.uploadedAt ? new Date(d.uploadedAt) : new Date()
+      })));
+      // If any doc analysis suggests pass/partial, mark pending; if all fail mark unverified
+      const anyPass = uploadedDocs.some(d => d.analysis && d.analysis.verdict && d.analysis.verdict !== 'fail')
+      const allFail = uploadedDocs.length > 0 && uploadedDocs.every(d => d.analysis && d.analysis.verdict === 'fail')
+      user.verification.status = allFail ? 'unverified' : (anyPass ? 'pending' : 'pending')
+    }
+
     await user.save();
 
     const userSafe = { ...user.toObject(), password: undefined };

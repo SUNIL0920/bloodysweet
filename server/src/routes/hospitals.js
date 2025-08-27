@@ -2,6 +2,9 @@ import express from 'express'
 import User from '../models/User.js'
 import BloodRequest from '../models/BloodRequest.js'
 import { authMiddleware } from '../middleware/authMiddleware.js'
+import jwt from 'jsonwebtoken'
+
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-here-change-in-production';
 import multer from 'multer'
 import path from 'path'
 import fs from 'fs'
@@ -103,12 +106,13 @@ router.get('/verification/template/:type', async (req, res) => {
   }
 })
 
-// POST /api/hospitals/verification/upload  (role: hospital)
+// POST /api/hospitals/verification/upload
 // fields: type=license|registrationProof|authorityLetter|accreditation  file
-router.post('/verification/upload', authMiddleware, async (req, res, next) => {
-  if (req.user?.role !== 'hospital') return res.status(403).json({ message: 'Forbidden' })
-  next()
-}, upload.single('file'), async (req, res) => {
+// This endpoint is publicly accessible to allow hospitals to upload verification documents
+// before they have an account/token. If the request is made while authenticated, the
+// client can still use the authenticated flow (same endpoint) and handle association
+// client-side; here we simply store the file, run analysis and return metadata.
+router.post('/verification/upload', upload.single('file'), async (req, res) => {
   try {
     const docType = (req.body?.type || '').toString() || 'other'
     if (!req.file) return res.status(400).json({ message: 'No file uploaded' })
@@ -117,30 +121,55 @@ router.post('/verification/upload', authMiddleware, async (req, res, next) => {
       name: req.file.originalname,
       url: `/uploads/hospital_docs/${req.file.filename}`,
       mimeType: req.file.mimetype,
-      size: req.file.size
+      size: req.file.size,
+      uploadedAt: new Date()
     }
-    // Run analysis
+
+    // Run analysis (best-effort)
     let analysis = null
     try {
       analysis = await analyzeDocument({ type: docType, localPath: path.join(hospitalDocsDir, req.file.filename), mimeType: req.file.mimetype })
       meta.analysis = analysis
-    } catch {}
+    } catch (e) {
+      // analysis failed — continue without blocking upload
+    }
 
     // If analysis verdict is pass/partial mark pending, if fail keep unverified but still store document
-    const status = analysis?.verdict === 'fail' ? 'unverified' : 'pending'
-    await User.updateOne({ _id: req.user._id }, { $push: { 'verification.documents': meta }, $set: { 'verification.status': status } })
-    res.json({ ok: true, document: meta, status })
+    const status = meta.analysis?.verdict === 'fail' ? 'unverified' : 'pending'
+
+    // NOTE: We do not attach the uploaded doc to any user here because this upload
+    // is allowed pre-registration. The client should send the returned `meta.url`
+    // (or the entire meta) when calling /api/auth/register so the server can
+    // attach documents to the newly created hospital user.
+
+    res.json({ ok: true, document: meta, status, attached: false })
   } catch (err) {
     res.status(500).json({ message: 'Failed to upload document' })
   }
 })
 
 // POST /api/hospitals/verification/submit -> mark as pending review
-router.post('/verification/submit', authMiddleware, async (req, res) => {
+// This endpoint is allowed pre-registration. If called with an auth token for
+// an existing hospital user, the server will update that user's verification.status.
+// Otherwise it simply returns ok so the client can continue the registration flow.
+router.post('/verification/submit', async (req, res) => {
   try {
-    if (req.user?.role !== 'hospital') return res.status(403).json({ message: 'Forbidden' })
-    await User.updateOne({ _id: req.user._id }, { $set: { 'verification.status': 'pending', 'verification.reviewedAt': null, 'verification.notes': '' } })
-    res.json({ ok: true })
+    // Try to extract token and attach user if present
+    const authHeader = req.headers.authorization || ''
+    const token = authHeader.startsWith('Bearer ') ? authHeader.substring(7) : null
+    if (!token) {
+      return res.json({ ok: true, attached: false })
+    }
+    let decoded
+    try { decoded = jwt.verify(token, JWT_SECRET) } catch { return res.json({ ok: true, attached: false }) }
+    const user = await User.findById(decoded.id)
+    if (!user || user.role !== 'hospital') return res.json({ ok: true, attached: false })
+    user.verification = user.verification || {}
+    user.verification.status = 'pending'
+    user.verification.reviewedAt = null
+    user.verification.notes = ''
+    await user.save()
+    res.json({ ok: true, attached: true })
   } catch (err) {
     res.status(500).json({ message: 'Failed to submit verification' })
   }
