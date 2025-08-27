@@ -86,7 +86,7 @@ app.get("/health", (_req, res) => {
   });
 });
 
-// Database connection test endpoint
+// Database connection test endpoint - Force redeploy
 app.get("/test-db", async (_req, res) => {
   try {
     const dbStatus = mongoose.connection.readyState;
