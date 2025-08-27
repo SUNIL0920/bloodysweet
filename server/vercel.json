@@ -18,6 +18,10 @@
     {
       "src": "/health",
       "dest": "src/server.js"
+    },
+    {
+      "src": "/test-db",
+      "dest": "src/server.js"
     }
   ],
   "env": {
